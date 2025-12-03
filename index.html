@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Biodiversity & Orchard Chat Calc</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load PapaParse for CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Load SheetJS (XLSX) for Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Load Chart.js for Graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        /* Simple scrollbar for Firefox */
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #1f2937;
+        }
+        /* Simple scrollbar for Webkit (Chrome, Safari) */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #4b5563;
+            border-radius: 4px;
+            border: 2px solid #1f2937;
+        }
+        /* Ensure canvas is responsive */
+        #chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        @media (min-width: 768px) {
+            #chart-container {
+                height: 400px;
+            }
+        }
+        /* Style for the play audio button */
+        .play-audio-btn {
+            background: none;
+            border: none;
+            color: #9ec5fe; /* Light blue */
+            cursor: pointer;
+            padding: 8px; /* Larger touch target */
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 8px;
+            transition: color 0.2s;
+        }
+        .play-audio-btn:hover {
+            color: #ffffff; /* White on hover */
+        }
+        .play-audio-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+        /* Modal Overlay */
+        #modal-overlay {
+            backdrop-filter: blur(2px);
+        }
+        /* Mobile Tab Active State */
+        .nav-item.active {
+            color: #2563eb; /* blue-600 */
+        }
+        .nav-item.active svg {
+            stroke: #2563eb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800 overflow-hidden h-[100dvh]">
+
+    <!-- --- Identification Modal --- -->
+    <div id="modal-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 z-50 flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col">
+            <div class="p-5 overflow-y-auto">
+                <div class="text-center">
+                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-purple-100 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+                    </div>
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">Identification Result</h3>
+                    <div class="mt-2 text-left bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <p class="text-xs text-gray-500 uppercase tracking-wide font-bold mb-1">Scientific Name</p>
+                        <p id="modal-species-name" class="text-xl font-bold text-gray-800 mb-2"></p>
+                        
+                        <p class="text-xs text-gray-500 uppercase tracking-wide font-bold mb-1">Local Name</p>
+                        <p id="modal-local-name" class="text-sm text-purple-600 font-semibold mb-2"></p>
+                        
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs text-gray-500 uppercase tracking-wide font-bold">Confidence</span>
+                            <span id="modal-confidence" class="text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-800"></span>
+                        </div>
+
+                        <p class="text-xs text-gray-500 uppercase tracking-wide font-bold mb-1">Reasoning</p>
+                        <div id="modal-reasoning" class="text-xs text-gray-600 h-20 overflow-y-auto custom-scrollbar"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-gray-50 rounded-b-xl flex gap-3">
+                <button id="modal-cancel-btn" class="flex-1 px-4 py-3 bg-white text-gray-700 font-medium rounded-lg shadow-sm border hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                    Cancel
+                </button>
+                <button id="modal-confirm-btn" class="flex-1 px-4 py-3 bg-purple-600 text-white font-medium rounded-lg shadow-md hover:bg-purple-700 active:bg-purple-800 transition-colors">
+                    Add (+1)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="flex flex-col md:flex-row h-full w-full">
+
+        <!-- --- Left Panel (Desktop) / Tab Views (Mobile) --- -->
+        <div id="left-panel" class="w-full md:w-3/5 h-full flex flex-col md:overflow-y-auto custom-scrollbar relative pb-16 md:pb-0 bg-gray-100">
+            
+            <!-- Error Message Toast -->
+            <div id="error-message" class="hidden absolute top-4 left-4 right-4 z-40 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg flex items-start gap-3" role="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span id="error-text" class="block sm:inline text-sm flex-1"></span>
+                <button id="close-error-btn" class="p-1 -mr-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- VIEW 1: DATA (Inputs & List) -->
+            <div id="view-data" class="mobile-view w-full p-4 flex flex-col gap-4 overflow-y-auto h-full md:h-auto md:overflow-visible">
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-700 md:mb-2">Biodiversity & Orchard</h1>
+
+                <!-- Input Section -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-lg font-semibold mb-3 text-gray-700 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M12 5v14M5 12h14"/></svg>
+                        Add Data
+                    </h2>
+                    
+                    <div class="flex flex-col gap-3">
+                        <!-- Identify Button (Primary) -->
+                        <input type="file" id="identify-input" accept="image/*" capture="environment" class="hidden" />
+                        <button id="identify-btn" class="flex items-center justify-center gap-3 w-full px-4 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl shadow-md hover:shadow-lg active:scale-95 transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                            <span class="font-semibold text-lg">Snap & Identify</span>
+                        </button>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="file" id="file-input" accept=".csv, .xlsx, .xls" class="hidden" />
+                            <button id="file-upload-btn" class="flex flex-col items-center justify-center gap-1 p-3 bg-white border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-all text-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500 mb-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                <span>Upload CSV</span>
+                            </button>
+
+                            <input type="file" id="image-input" accept="image/*" class="hidden" />
+                            <button id="image-upload-btn" class="flex flex-col items-center justify-center gap-1 p-3 bg-white border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-all text-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500 mb-1"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                <span>Scan Sheet</span>
+                            </button>
+                        </div>
+
+                        <!-- Manual Entry Accordion-ish -->
+                        <div class="mt-2 pt-3 border-t border-gray-100">
+                            <p class="text-xs text-gray-400 font-bold uppercase mb-2">Manual Entry</p>
+                            <div class="flex gap-2">
+                                <input type="text" id="manual-species" placeholder="Species Name" class="flex-1 px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-sm" />
+                                <input type="number" id="manual-count" placeholder="#" min="1" value="1" class="w-16 px-2 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-center text-sm" />
+                                <button id="manual-add-btn" class="px-4 py-2 bg-gray-800 text-white rounded-lg shadow hover:bg-gray-900 transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Table -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex-1 flex flex-col min-h-[300px]">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-lg font-semibold text-gray-700">List (<span id="total-individuals-header">0</span>)</h2>
+                        <button id="clear-all-btn" class="text-xs text-red-500 bg-red-50 px-2 py-1 rounded hover:bg-red-100 flex items-center gap-1" title="Clear all data">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            Clear
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                        <table class="w-full text-left text-sm">
+                            <thead class="sticky top-0 bg-white border-b z-10">
+                                <tr>
+                                    <th class="py-2 font-semibold text-gray-600">Species</th>
+                                    <th class="py-2 font-semibold text-center text-gray-600">#</th>
+                                    <th class="py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="species-list-body">
+                                <tr>
+                                    <td colSpan="3" class="py-8 text-center text-gray-400 italic text-sm">
+                                        No data yet. <br> Upload or Snap to start.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="h-16 md:hidden"></div> <!-- Spacer for bottom nav -->
+            </div>
+
+            <!-- VIEW 2: ANALYSIS (Indices & Charts) -->
+            <div id="view-analysis" class="mobile-view w-full p-4 flex flex-col gap-4 overflow-y-auto h-full md:h-auto md:overflow-visible hidden md:flex">
+                <h1 class="text-2xl font-bold text-gray-700 md:hidden">Analysis</h1>
+                
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold text-gray-700">Indices</h2>
+                        <button id="analyze-btn" class="flex items-center gap-1.5 text-xs font-medium px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+                            <span>Ask AI</span>
+                        </button>
+                    </div>
+                    <div id="indices-grid" class="grid grid-cols-2 gap-3">
+                        <!-- Index cards injected here -->
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-2">Abundance</h2>
+                    <div id="chart-container">
+                        <canvas id="species-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-16 md:mb-0">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-3">Download</h2>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button id="download-graph-btn" class="flex flex-col items-center justify-center gap-1 p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 border text-xs disabled:opacity-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            <span>PNG</span>
+                        </button>
+                        <button id="download-csv-btn" class="flex flex-col items-center justify-center gap-1 p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 border text-xs disabled:opacity-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                            <span>CSV</span>
+                        </button>
+                        <button id="download-report-btn" class="flex flex-col items-center justify-center gap-1 p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 border text-xs disabled:opacity-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                            <span>TXT</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- --- Right Panel (Desktop) / Chat View (Mobile) --- -->
+        <div id="right-panel" class="mobile-view w-full md:w-2/5 h-full flex flex-col bg-gray-800 pb-16 md:pb-0 hidden md:flex">
+            <div class="p-4 bg-gray-900 shadow-md md:bg-transparent md:shadow-none">
+                <h2 class="text-xl font-semibold text-white flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                    BioBot Chat
+                </h2>
+            </div>
+            
+            <div id="chat-history" class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 custom-scrollbar">
+                <!-- Chat bubbles -->
+            </div>
+            
+            <div class="p-3 bg-gray-800 border-t border-gray-700">
+                <div class="flex gap-2">
+                    <input type="text" id="chat-input" placeholder="Ask about your data..." class="flex-1 px-4 py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400" />
+                    <button id="chat-send-btn" class="w-12 h-12 flex items-center justify-center bg-blue-600 text-white rounded-full shadow hover:bg-blue-500 transition-all disabled:opacity-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- --- Bottom Navigation Bar (Mobile Only) --- -->
+        <div id="mobile-nav" class="fixed bottom-0 left-0 w-full h-16 bg-white border-t border-gray-200 flex justify-around items-center md:hidden z-50 px-2 pb-safe">
+            <button class="nav-item active flex flex-col items-center justify-center w-full h-full text-gray-400 hover:bg-gray-50 transition-colors" data-target="view-data">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span class="text-[10px] font-medium">Data</span>
+            </button>
+            <button class="nav-item flex flex-col items-center justify-center w-full h-full text-gray-400 hover:bg-gray-50 transition-colors" data-target="view-analysis">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span class="text-[10px] font-medium">Analysis</span>
+            </button>
+            <button class="nav-item flex flex-col items-center justify-center w-full h-full text-gray-400 hover:bg-gray-50 transition-colors" data-target="right-panel">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                <span class="text-[10px] font-medium">Chat</span>
+            </button>
+        </div>
+
+    </div>
+    
+    <script type="module">
+        // --- API Configuration ---
+        const API_KEY = "AIzaSyCssv-j01zWkM-m3ySrcow0pBPf2ACD740"; 
+        const GEN_MODEL = "gemini-2.5-flash-preview-09-2025";
+        const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+        const API_URL_GENERATE = `https://generativelanguage.googleapis.com/v1beta/models/${GEN_MODEL}:generateContent?key=${API_KEY}`;
+        const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${API_KEY}`;
+        
+        // --- FLORA KNOWLEDGE BASE (Includes Mangroves + Orchard Species) ---
+        const FLORA_KNOWLEDGE_BASE = {
+            // --- Mangroves ---
+            "Acanthus ilicifolius": { local_names: "Hargoza, Alchi", habit: "Shrub", roots: "Stilt roots sometimes", leaves: "Spiny margin", flowers: "Bright blue spikes", habitat: "Transitional mangrove" },
+            "Aegiceras corniculatum": { local_names: "Khalsi", habit: "Small tree", roots: "None aerial", leaves: "Salt glands, entire", flowers: "White umbels", fruits: "Curved cylindrical (goat horn)", habitat: "Riverine mangrove" },
+            "Avicennia marina": { local_names: "White Mangrove", habit: "Tree", roots: "Pencil pneumatophores", leaves: "Silvery beneath, acute tip", flowers: "Orange-yellow", fruits: "Heart shaped capsule", habitat: "Riverine" },
+            "Avicennia officinalis": { local_names: "Indian Mangrove", habit: "Tree", roots: "Pencil pneumatophores", leaves: "Obovate, rounded tip", flowers: "Yellow", fruits: "Flat almond shape", habitat: "Riverine" },
+            "Bruguiera gymnorrhiza": { local_names: "Orange Mangrove", habit: "Tree", roots: "Knee roots", leaves: "Reddish midrib", flowers: "Red solitary", fruits: "Cigar propagule", habitat: "Riverine" },
+            "Ceriops decandra": { local_names: "Yellow Mangrove", habit: "Shrub", roots: "Buttresses", leaves: "Obovate, rounded", flowers: "Greenish white", fruits: "Upright propagule", habitat: "Mangrove" },
+            "Excoecaria agallocha": { local_names: "Milky Mangrove", habit: "Tree", latex: "White poisonous", leaves: "Simple alternate", flowers: "Catkins", fruits: "3-lobed capsule", habitat: "Mangrove" },
+            "Rhizophora mucronata": { local_names: "Red Mangrove", habit: "Tree", roots: "Arching stilt roots", leaves: "Mucronate tip (spine)", flowers: "Cream", fruits: "Long propagule (60cm)", habitat: "Mangrove" },
+            "Sonneratia alba": { local_names: "Mangrove Apple", habit: "Tree", roots: "Thick corky pneumatophores", leaves: "Rounded", flowers: "White", fruits: "Green berry with cup calyx", habitat: "Mangrove" },
+            "Xylocarpus granatum": { local_names: "Cannonball Mangrove", habit: "Tree", roots: "Snake buttresses", leaves: "Compound", fruits: "Large spherical (cannonball)", habitat: "Mangrove" },
+            
+            // --- Orchard Species (From Signboard) ---
+            "Syzygium jambos": { local_names: "Rose Apple, Champakka", habit: "Tree", leaves: "Lanceolate, opposite", flowers: "White pom-pom like", fruits: "Yellow/pink, bell-shaped, rose scent", habitat: "Orchard" },
+            "Rollinia deliciosa": { local_names: "Biriba", habit: "Tree", leaves: "Large, oblong", fruits: "Yellow, large, with soft spines/bumps", habitat: "Orchard" },
+            "Annona squamosa": { local_names: "Custard Apple, Sitaphal", habit: "Tree", leaves: "Oblong-lanceolate", fruits: "Green, knobby/scaly skin, white pulp", habitat: "Orchard" },
+            "Spondias dulcis": { local_names: "Ambarella, Ambazhanga", habit: "Tree", leaves: "Pinnate", fruits: "Oval, green turning yellow, fibrous stone", habitat: "Orchard" },
+            "Nephelium lappaceum": { local_names: "Rambutan", habit: "Tree", leaves: "Pinnate", fruits: "Red, hairy/spiny skin, translucent flesh", habitat: "Orchard" },
+            "Manilkara zapota": { local_names: "Sapodilla, Chikoo", habit: "Tree", leaves: "Elliptic, glossy green", fruits: "Brown, fuzzy skin, grainy sweet flesh", habitat: "Orchard" },
+            "Averrhoa carambola": { local_names: "Starfruit, Chaturpuli", habit: "Tree", leaves: "Pinnate, sensitive", flowers: "Pink/purple", fruits: "Yellow/green, star-shaped cross section", habitat: "Orchard" },
+            "Chrysophyllum cainito": { local_names: "Star Apple", habit: "Tree", leaves: "Glossy green top, coppery gold bottom", fruits: "Purple or green, round, star pattern inside", habitat: "Orchard" },
+            "Syzygium cumini": { local_names: "Jamun, Njaval", habit: "Tree", leaves: "Opposite, smooth", fruits: "Purple-black, oblong, staining juice", habitat: "Orchard" },
+            "Flacourtia jangomas": { local_names: "Coffee Plum, Lubika", habit: "Tree (often thorny)", leaves: "Ovate", fruits: "Small, round, brownish-purple", habitat: "Orchard" },
+            "Morus nigra": { local_names: "Mulberry", habit: "Shrub/Tree", leaves: "Serrated, lobed", fruits: "Dark purple/black aggregate berry", habitat: "Orchard" },
+            "Mangifera indica": { local_names: "Mango, Maavu", habit: "Tree", leaves: "Lanceolate, alternate, leathery", fruits: "Large fleshy drupe, yellow/red/green", habitat: "Orchard" },
+            "Psidium guajava": { local_names: "Guava, Pera", habit: "Tree", bark: "Smooth peeling", leaves: "Opposite, prominent veins", fruits: "Green/yellow skin, pink/white flesh", habitat: "Orchard" },
+            "Punica granatum": { local_names: "Pomegranate, Mathalam", habit: "Shrub", flowers: "Red", fruits: "Red, round with crown, arils inside", habitat: "Orchard" },
+            "Dimocarpus longan": { local_names: "Longan", habit: "Tree", leaves: "Pinnate", fruits: "Small, round, light brown shell, translucent flesh", habitat: "Orchard" },
+            "Pometia pinnata": { local_names: "Matoa", habit: "Tree", leaves: "Pinnate, large", fruits: "Green/red/purple, ovoid", habitat: "Orchard" },
+            "Durio zibethinus": { local_names: "Durian", habit: "Tree", fruits: "Large, hard spiny shell, strong odor", habitat: "Orchard" },
+            "Citrus sinensis": { local_names: "Sweet Orange", habit: "Tree", leaves: "Winged petiole", fruits: "Orange, round, citrus segments", habitat: "Orchard" },
+            "Ziziphus mauritiana": { local_names: "Indian Jujube, Ber", habit: "Tree", leaves: "Round/oval, 3-nerved", fruits: "Small, round/oval, yellow/orange", habitat: "Orchard" },
+            "Bunchosia armeniaca": { local_names: "Peanut Butter Fruit", habit: "Shrub", fruits: "Orange/red, soft, sticky", habitat: "Orchard" },
+            "Citrus limetta": { local_names: "Sweet Lime, Mosambi", habit: "Tree", fruits: "Green/yellow, round, mild citrus", habitat: "Orchard" },
+            "Artocarpus heterophyllus": { local_names: "Jackfruit, Plavu", habit: "Tree", leaves: "Dark green, glossy", fruits: "Massive, spiny, born on trunk", habitat: "Orchard" },
+            "Ficus religiosa": { local_names: "Peepal, Sacred Fig", habit: "Tree", leaves: "Heart shaped with long drip tip", habitat: "Orchard/Sacred Grove" }
+        };
+
+        // --- State ---
+        let speciesData = []; 
+        let chatHistory = [
+            { role: 'model', text: "Hello! I'm BioBot. I can identify Indian Mangroves and common Orchard species. Use the tabs below to explore." }
+        ];
+        let currentChart = null; 
+        let lastAnalysis = "No analysis generated yet.";
+        let currentAudio = null; 
+        let pendingIdentification = null;
+
+        // --- DOM Elements ---
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const closeErrorBtn = document.getElementById('close-error-btn');
+        const fileInput = document.getElementById('file-input');
+        const fileUploadBtn = document.getElementById('file-upload-btn');
+        const imageInput = document.getElementById('image-input');
+        const imageUploadBtn = document.getElementById('image-upload-btn');
+        
+        const identifyInput = document.getElementById('identify-input');
+        const identifyBtn = document.getElementById('identify-btn');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalSpeciesName = document.getElementById('modal-species-name');
+        const modalLocalName = document.getElementById('modal-local-name');
+        const modalConfidence = document.getElementById('modal-confidence');
+        const modalReasoning = document.getElementById('modal-reasoning');
+        const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+
+        const manualSpeciesInput = document.getElementById('manual-species');
+        const manualCountInput = document.getElementById('manual-count');
+        const manualAddBtn = document.getElementById('manual-add-btn');
+        const speciesListBody = document.getElementById('species-list-body');
+        const totalIndividualsHeader = document.getElementById('total-individuals-header');
+        const clearAllBtn = document.getElementById('clear-all-btn');
+        const indicesGrid = document.getElementById('indices-grid');
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const chartCanvas = document.getElementById('species-chart');
+        const downloadGraphBtn = document.getElementById('download-graph-btn');
+        const downloadCsvBtn = document.getElementById('download-csv-btn');
+        const downloadReportBtn = document.getElementById('download-report-btn');
+        const chatHistoryContainer = document.getElementById('chat-history');
+        const chatInput = document.getElementById('chat-input');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+        const navItems = document.querySelectorAll('.nav-item');
+
+        // --- Mobile Tab Switching Logic ---
+        const switchMobileTab = (targetId) => {
+            const views = document.querySelectorAll('.mobile-view');
+            if (window.innerWidth >= 768) return; 
+            views.forEach(v => { v.classList.add('hidden'); v.classList.remove('flex'); });
+            const targetEl = document.getElementById(targetId);
+            if(targetEl) { targetEl.classList.remove('hidden'); targetEl.classList.add('flex'); }
+            navItems.forEach(item => {
+                if(item.dataset.target === targetId) item.classList.add('active');
+                else item.classList.remove('active');
+            });
+        };
+
+        // --- Icons ---
+        const loaderIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
+        const speakerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+        const identifyIcon = identifyBtn.innerHTML;
+        const chatSendIcon = chatSendBtn.innerHTML;
+        const analyzeIcon = analyzeBtn.innerHTML;
+
+        // --- Helpers ---
+        const exponentialBackoff = async (apiCall, maxRetries = 5) => {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await apiCall();
+                    if (response.ok) return response.json();
+                    else if (response.status === 429 || response.status >= 500) { await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2; }
+                    else { const errorData = await response.json(); throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`); }
+                } catch (error) {
+                    if (i === maxRetries - 1) { if (API_KEY === "") throw new Error("API call failed. An API key is required."); throw error; }
+                    await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2;
+                }
+            }
+            throw new Error("API call failed after maximum retries.");
+        };
+
+        const fileToBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
+        });
+        
+        const showError = (message) => { errorText.textContent = message; errorMessage.classList.remove('hidden'); setTimeout(() => hideError(), 5000); };
+        const hideError = () => { errorMessage.classList.add('hidden'); };
+        
+        const generateColors = (count) => {
+            const colors = [];
+            for (let i = 0; i < count; i++) { colors.push(`hsla(${(i * (360 / (count * 0.61803398875))) % 360}, 70%, 60%, 0.7)`); }
+            return colors;
+        };
+
+        const base64ToArrayBuffer = (base64) => {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length; const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
+            return bytes.buffer;
+        };
+
+        const pcmToWav = (pcmData, sampleRate) => {
+           const headerLength = 44; const dataLength = pcmData.length * 2; const buffer = new ArrayBuffer(headerLength + dataLength); const view = new DataView(buffer);
+           const writeString = (view, offset, string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
+           writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + dataLength, true); writeString(view, 8, 'WAVE');
+           writeString(view, 12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+           view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+           writeString(view, 36, 'data'); view.setUint32(40, dataLength, true);
+           let offset = headerLength; for (let i = 0; i < pcmData.length; i++, offset += 2) { view.setInt16(offset, pcmData[i], true); }
+           return new Blob([view], { type: 'audio/wav' });
+        };
+
+        const generateAndPlayAudio = async (text, buttonElement) => {
+            if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+            buttonElement.disabled = true; buttonElement.innerHTML = `<span class="animate-spin text-xs">...</span>`;
+            try {
+                const payload = { contents: [{ parts: [{ text: `Say in a friendly tone: ${text}` }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Achird" } } } }, model: TTS_MODEL };
+                const data = await exponentialBackoff(() => fetch(API_URL_TTS, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }));
+                const audioData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                const mimeType = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+                if (audioData) {
+                    const sampleRate = mimeType.match(/rate=(\d+)/) ? parseInt(mimeType.match(/rate=(\d+)/)[1], 10) : 24000;
+                    const wavBlob = pcmToWav(new Int16Array(base64ToArrayBuffer(audioData)), sampleRate);
+                    currentAudio = new Audio(URL.createObjectURL(wavBlob)); currentAudio.play();
+                    currentAudio.onended = () => { buttonElement.disabled = false; buttonElement.innerHTML = speakerIcon; currentAudio = null; };
+                }
+            } catch (err) { console.error(err); buttonElement.disabled = false; buttonElement.innerHTML = speakerIcon; }
+        };
+
+        const addOrUpdateSpecies = (name, count) => {
+            if (!name || name === "Unknown" || count <= 0) return;
+            const existingSpeciesIndex = speciesData.findIndex(sp => sp.name.toLowerCase() === name.toLowerCase());
+            if (existingSpeciesIndex !== -1) { speciesData[existingSpeciesIndex].count += count; } else { speciesData.push({ name, count }); }
+            renderData(); 
+        };
+        
+        const calculateIndices = () => {
+            const N = speciesData.reduce((acc, sp) => acc + sp.count, 0); const S = speciesData.length;
+            if (N === 0 || S === 0) return { richness: 0, shannon: 0, simpson: 0, evenness: 0, totalIndividuals: 0 };
+            let shannon = 0; speciesData.forEach(sp => { const p_i = sp.count / N; if (p_i > 0) shannon -= p_i * Math.log(p_i); });
+            let simpson_sum = 0; speciesData.forEach(sp => { simpson_sum += sp.count * (sp.count - 1); });
+            const D = (N > 1) ? (simpson_sum / (N * (N - 1))) : 0; const simpson = 1 - D; 
+            const H_max = Math.log(S); const evenness = (H_max > 0) ? (shannon / H_max) : 0;
+            return { richness: S, shannon, simpson, evenness, totalIndividuals: N };
+        };
+
+        const renderSpeciesList = (indices) => {
+            speciesListBody.innerHTML = ''; totalIndividualsHeader.textContent = indices.totalIndividuals;
+            if (speciesData.length === 0) { speciesListBody.innerHTML = `<tr><td colSpan="3" class="py-8 text-center text-gray-400 italic text-sm">No data yet.<br>Upload or Snap to start.</td></tr>`; return; }
+            speciesData.sort((a, b) => b.count - a.count);
+            speciesData.forEach(sp => {
+                const row = document.createElement('tr'); row.className = 'border-b border-gray-100 hover:bg-gray-50';
+                row.innerHTML = `<td class="py-2 text-sm text-gray-700">${sp.name}</td><td class="py-2 text-center text-sm font-medium">${sp.count}</td><td class="py-2 text-right"><button class="delete-btn text-gray-400 hover:text-red-500 p-2" data-name="${sp.name}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td>`;
+                speciesListBody.appendChild(row);
+            });
+        };
+        
+        const getIndexCardHTML = (icon, title, value, description) => `<div class="bg-gray-50 p-3 rounded-lg flex flex-col justify-between border border-gray-100"><div><div class="flex items-center gap-1.5 text-blue-600"><span class="flex-shrink-0 scale-75 origin-left">${icon}</span><h3 class="font-semibold text-gray-700 text-xs truncate" title="${title}">${title}</h3></div><p class="text-2xl font-bold text-gray-900 my-1">${value}</p></div><p class="text-[10px] text-gray-500 leading-tight">${description}</p></div>`;
+        
+        const renderIndices = (indices) => {
+            indicesGrid.innerHTML = `
+                ${getIndexCardHTML('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>', 'Richness (S)', indices.richness.toFixed(0), 'Total species count.')}
+                ${getIndexCardHTML('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>', "Shannon (H')", indices.shannon.toFixed(2), 'Diversity index.')}
+                ${getIndexCardHTML('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>', 'Simpson (1-D)', indices.simpson.toFixed(2), 'Probability of difference.')}
+                ${getIndexCardHTML('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 12h11"></path><path d="M11 7h7"></path><path d="M7 17h11"></path></svg>', "Evenness (J')", indices.evenness.toFixed(2), 'Distribution evenness.')}
+            `;
+        };
+        
+        const renderChart = (indices) => {
+            const ctx = chartCanvas.getContext('2d'); if (currentChart) currentChart.destroy(); if (speciesData.length === 0) return;
+            const topSpecies = [...speciesData].sort((a, b) => b.count - a.count).slice(0, 10).reverse(); const backgroundColors = generateColors(topSpecies.length);
+            currentChart = new Chart(ctx, { type: 'bar', data: { labels: topSpecies.map(s => s.name), datasets: [{ label: 'Abundance', data: topSpecies.map(s => s.count), backgroundColor: backgroundColors, borderColor: backgroundColors.map(c => c.replace('0.7', '1')), borderWidth: 1 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: false } }, scales: { x: { beginAtZero: true } } } });
+        };
+        
+        const renderData = () => {
+            const indices = calculateIndices(); renderSpeciesList(indices); renderIndices(indices); renderChart(indices);
+            const hasData = speciesData.length > 0; analyzeBtn.disabled = !hasData; downloadGraphBtn.disabled = !hasData; downloadCsvBtn.disabled = !hasData; downloadReportBtn.disabled = !hasData;
+        };
+        
+        const getChatBubbleHTML = (role, text, isLoading = false) => {
+            const isModel = role === 'model';
+            const icon = isModel ? `<div class="flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg></div>` : `<div class="flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-gray-600"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>`;
+            const bubbleClass = isModel ? 'bg-white border border-gray-100 shadow-sm text-gray-800' : 'bg-blue-600 text-white';
+            let contentHTML = isLoading ? `<div class="flex gap-1.5 items-center"><span class="h-1.5 w-1.5 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></span><span class="h-1.5 w-1.5 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.15s]"></span><span class="h-1.5 w-1.5 bg-gray-400 rounded-full animate-pulse"></span></div>` : `<div><p class="inline text-sm">${text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</p>${isModel ? `<button class="play-audio-btn ml-2" data-text="${encodeURIComponent(text)}">${speakerIcon}</button>` : ''}</div>`;
+            return `<div class="flex ${isModel ? 'justify-start' : 'justify-end'} mb-4"><div class="flex items-start gap-2 max-w-[85%] ${isModel ? '' : 'flex-row-reverse'}">${icon}<div class="p-3 rounded-2xl ${isModel ? 'rounded-tl-none' : 'rounded-tr-none'} ${bubbleClass}">${contentHTML}</div></div></div>`;
+        };
+        
+        const renderChatHistory = () => {
+            chatHistoryContainer.innerHTML = chatHistory.map(msg => getChatBubbleHTML(msg.role, msg.text, msg.isLoading)).join('');
+            chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
+        };
+
+        // --- HANDLER: Identify Specimen with Knowledge Base ---
+        const handleIdentifyUpload = async (event) => {
+            const file = event.target.files[0];
+            if (!file || !file.type.startsWith('image/')) return;
+            
+            hideError();
+            identifyBtn.disabled = true;
+            identifyBtn.innerHTML = `${loaderIcon} <span class="text-sm">Analyzing...</span>`;
+
+            try {
+                const base64Data = await fileToBase64(file);
+                const kbString = JSON.stringify(FLORA_KNOWLEDGE_BASE);
+                const systemPrompt = `You are an expert botanist specialized in Indian Mangroves and Tropical Orchard Flora. Reference Guide: ${kbString}. Analyze the image visual features. Return JSON: { "species_name": "Scientific Name", "common_name": "Local Name", "confidence": "High/Medium/Low", "reasoning": "Specific features matched." }. If unknown, species_name: "Unknown".`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: systemPrompt }, { inlineData: { mimeType: file.type, data: base64Data } }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                };
+
+                const data = await exponentialBackoff(() => fetch(API_URL_GENERATE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }));
+                const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!resultText) throw new Error("No identification returned.");
+                const result = JSON.parse(resultText);
+                
+                if (result && result.species_name && result.species_name !== "Unknown") {
+                    pendingIdentification = result.species_name;
+                    modalSpeciesName.textContent = result.species_name;
+                    modalLocalName.textContent = result.common_name || "";
+                    modalConfidence.textContent = result.confidence || 'Unknown';
+                    modalReasoning.textContent = result.reasoning || "Matched with field guide descriptions.";
+                    modalOverlay.classList.remove('hidden');
+                } else {
+                    showError("Could not match this image to any species in the Field Guide.");
+                }
+            } catch (err) {
+                console.error(err);
+                showError("Identification failed. " + err.message);
+            } finally {
+                identifyBtn.disabled = false;
+                identifyBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    <span class="font-semibold text-lg">Snap & Identify</span>
+                `;
+                identifyInput.value = null;
+            }
+        };
+
+        // --- Event Handlers & Listeners ---
+        const handleFileUpload = (event) => {
+            const file = event.target.files[0]; if (!file) return;
+            hideError(); fileUploadBtn.disabled = true;
+            const reader = new FileReader();
+            reader.onerror = () => { showError("Error reading file."); fileUploadBtn.disabled = false; };
+            reader.onload = (e) => {
+                try {
+                    let parsedData = [];
+                    const fileType = file.name.split('.').pop().toLowerCase();
+                    if (fileType === 'csv' && window.Papa) {
+                        const result = window.Papa.parse(e.target.result, { header: true, skipEmptyLines: true });
+                        parsedData = result.data.map(row => ({ name: row.species || row.Species || row.name || row.Name, count: parseInt(row.count || row.Count || row.abundance || row.Abundance || 1) })).filter(item => item.name && !isNaN(item.count));
+                    } else if ((fileType === 'xlsx' || fileType === 'xls') && window.XLSX) {
+                        const workbook = window.XLSX.read(e.target.result, { type: 'array' });
+                        parsedData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]).map(row => ({ name: row.species || row.Species || row.name || row.Name, count: parseInt(row.count || row.Count || row.abundance || row.Abundance || 1) })).filter(item => item.name && !isNaN(item.count));
+                    }
+                    parsedData.forEach(item => addOrUpdateSpecies(item.name, item.count));
+                    chatHistory.push({ role: 'model', text: `Loaded ${parsedData.length} entries from ${file.name}.` }); renderChatHistory();
+                } catch (err) { showError("Failed to parse file."); } finally { fileUploadBtn.disabled = false; fileInput.value = null; }
+            };
+            const fileType = file.name.split('.').pop().toLowerCase();
+            if (fileType === 'csv') reader.readAsText(file); else if (fileType === 'xlsx' || fileType === 'xls') reader.readAsArrayBuffer(file); else { showError("Unsupported file type."); fileUploadBtn.disabled = false; }
+        };
+
+        const handleImageUpload = async (event) => {
+            const file = event.target.files[0]; if (!file) return;
+            hideError(); imageUploadBtn.disabled = true;
+            try {
+                const base64Data = await fileToBase64(file);
+                const payload = { contents: [{ parts: [{ text: "OCR species names/counts. Return JSON array: [{name, count}]" }, { inlineData: { mimeType: file.type, data: base64Data } }] }], generationConfig: { responseMimeType: "application/json" } };
+                const data = await exponentialBackoff(() => fetch(API_URL_GENERATE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }));
+                const list = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
+                if (Array.isArray(list) && list.length > 0) { list.forEach(i => { if (i.name && i.count) addOrUpdateSpecies(i.name, i.count); }); chatHistory.push({ role: 'model', text: `Added ${list.length} species via OCR.` }); renderChatHistory(); } else showError("No data found.");
+            } catch (err) { showError("OCR failed."); } finally { imageUploadBtn.disabled = false; imageInput.value = null; }
+        };
+
+        const sendChatRequest = async (text) => {
+            if (!text.trim()) return;
+            chatHistory.push({ role: 'user', text }); renderChatHistory();
+            chatHistory.push({ role: 'model', text: '...', isLoading: true }); renderChatHistory();
+            
+            const indices = calculateIndices();
+            const systemPrompt = `BioBot expert. Data: ${JSON.stringify(speciesData.slice(0, 10))}. S:${indices.richness}, N:${indices.totalIndividuals}, H':${indices.shannon.toFixed(2)}. Concise markdown.`;
+            
+            try {
+                const payload = { contents: [...chatHistory.slice(-6, -2).map(m => ({ role: m.role==='model'?'model':'user', parts: [{ text: m.text }] })), { role: 'user', parts: [{ text }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
+                const data = await exponentialBackoff(() => fetch(API_URL_GENERATE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }));
+                const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                chatHistory.pop(); chatHistory.push({ role: 'model', text: responseText }); lastAnalysis = responseText;
+            } catch (err) { chatHistory.pop(); chatHistory.push({ role: 'model', text: "Error." }); } finally { renderChatHistory(); }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderData(); renderChatHistory();
+            closeErrorBtn.addEventListener('click', hideError);
+            
+            // Tab switching
+            navItems.forEach(item => {
+                item.addEventListener('click', () => { switchMobileTab(item.dataset.target); });
+            });
+
+            // File inputs
+            fileUploadBtn.addEventListener('click', () => fileInput.click()); fileInput.addEventListener('change', handleFileUpload);
+            imageUploadBtn.addEventListener('click', () => imageInput.click()); imageInput.addEventListener('change', handleImageUpload);
+            identifyBtn.addEventListener('click', () => identifyInput.click()); identifyInput.addEventListener('change', handleIdentifyUpload);
+            
+            // Modal
+            modalConfirmBtn.addEventListener('click', () => { if (pendingIdentification) { addOrUpdateSpecies(pendingIdentification, 1); chatHistory.push({ role: 'model', text: `Added **${pendingIdentification}**.` }); renderChatHistory(); } modalOverlay.classList.add('hidden'); });
+            modalCancelBtn.addEventListener('click', () => { modalOverlay.classList.add('hidden'); });
+            
+            // Other interactions
+            manualAddBtn.addEventListener('click', () => { const n = manualSpeciesInput.value.trim(); const c = parseInt(manualCountInput.value); if(n && c > 0) { addOrUpdateSpecies(n, c); manualSpeciesInput.value=""; manualCountInput.value=1; } });
+            clearAllBtn.addEventListener('click', () => { speciesData=[]; renderData(); });
+            analyzeBtn.addEventListener('click', () => { analyzeBtn.disabled=true; analyzeBtn.innerHTML=`...`; sendChatRequest("Analyze data.").finally(() => { analyzeBtn.disabled=false; analyzeBtn.innerHTML=analyzeIcon; switchMobileTab('right-panel'); }); });
+            
+            chatSendBtn.addEventListener('click', () => { const t = chatInput.value; sendChatRequest(t); chatInput.value = ""; });
+            chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { const t = chatInput.value; sendChatRequest(t); chatInput.value = ""; }});
+            speciesListBody.addEventListener('click', (e) => { const btn = e.target.closest('.delete-btn'); if (btn) { speciesData = speciesData.filter(s => s.name !== btn.dataset.name); renderData(); } });
+            chatHistoryContainer.addEventListener('click', (e) => { const btn = e.target.closest('.play-audio-btn'); if (btn) generateAndPlayAudio(decodeURIComponent(btn.dataset.text), btn); });
+        });
+    </script>
+</body>
+</html>
